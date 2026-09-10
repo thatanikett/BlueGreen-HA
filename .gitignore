@@ -45,3 +45,12 @@ docker-compose.override.yml
 kubeconfig*
 
 context
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+.terraform.rc
+terraform.rc
