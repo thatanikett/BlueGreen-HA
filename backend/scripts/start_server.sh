@@ -41,4 +41,5 @@ docker run -d --name backend \
   -e DATABASE_URL="$DATABASE_URL" \
   -e REDIS_URL="$REDIS_URL" \
   -e APP_VERSION="$APP_VERSION" \
+  -e PG_SSL_MODE="require" \
   $IMAGE_URI
