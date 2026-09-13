@@ -52,14 +52,9 @@ jobs:
 
       - name: Create AWS CodeDeploy Deployment
         run: |
-          aws deploy create-deployment \
-            --application-name ${{ secrets.CODEDEPLOY_APP_NAME }} \
-            --deployment-group-name ${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }} \
-            --revision revisionType=AppSpecContent,appSpecContent={content=$(cat appspec.yml)} \
-            # NOTE: We zipped it above, but realistically we need to push it to S3.
-            # Let's push to an S3 bucket used for CodeDeploy revisions.
           aws s3 cp deployment.zip s3://${{ secrets.CODEDEPLOY_BUCKET }}/deployment-${{ github.sha }}.zip
           aws deploy create-deployment \
             --application-name ${{ secrets.CODEDEPLOY_APP_NAME }} \
             --deployment-group-name ${{ secrets.CODEDEPLOY_DEPLOYMENT_GROUP }} \
             --s3-location bucket=${{ secrets.CODEDEPLOY_BUCKET }},key=deployment-${{ github.sha }}.zip,bundleType=zip
+
