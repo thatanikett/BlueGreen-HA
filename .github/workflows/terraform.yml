@@ -14,6 +14,7 @@ jobs:
   terraform:
     name: "Terraform"
     runs-on: ubuntu-latest
+    environment: aws-cloud-env
     defaults:
       run:
         working-directory: ./terraform
@@ -27,11 +28,11 @@ jobs:
           terraform_version: 1.5.0
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Terraform Format
         run: terraform fmt -check

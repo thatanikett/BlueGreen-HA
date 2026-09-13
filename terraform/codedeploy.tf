@@ -1,12 +1,21 @@
+resource "random_id" "codedeploy_bucket" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket" "codedeploy_deployments" {
+  bucket        = "${var.project_name}-deployments-${random_id.codedeploy_bucket.hex}"
+  force_destroy = true
+}
+
 resource "aws_codedeploy_app" "backend" {
   compute_platform = "Server"
   name             = "${var.project_name}-backend-app"
 }
 
 resource "aws_codedeploy_deployment_group" "backend" {
-  app_name              = aws_codedeploy_app.backend.name
-  deployment_group_name = "${var.project_name}-backend-dg"
-  service_role_arn      = aws_iam_role.codedeploy.arn
+  app_name               = aws_codedeploy_app.backend.name
+  deployment_group_name  = "${var.project_name}-backend-dg"
+  service_role_arn       = aws_iam_role.codedeploy.arn
   deployment_config_name = "CodeDeployDefault.AllAtOnce"
 
   blue_green_deployment_config {

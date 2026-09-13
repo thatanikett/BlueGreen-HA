@@ -174,7 +174,7 @@ app.get("/test/smoke", async (_req, res) => {
 app.get("/products", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, sku, name, price, category, image, description
+      `SELECT id, sku, name, price, category, image, description, COALESCE(stock, 0) as stock
        FROM products
        ORDER BY category ASC, name ASC`,
     );
@@ -185,25 +185,44 @@ app.get("/products", async (req, res) => {
 });
 
 // Cart endpoints
+async function getProductStock(productId) {
+  try {
+    const res = await pool.query("SELECT stock FROM products WHERE id = $1", [productId]);
+    if (res.rows.length === 0) return 0;
+    return res.rows[0].stock || 0;
+  } catch (err) {
+    console.error("Error fetching stock:", err);
+    return 0;
+  }
+}
+
 app.get("/cart", (req, res) => {
   const cart = req.session.cart || [];
   res.json(cart);
 });
 
-app.post("/cart", (req, res) => {
+app.post("/cart", async (req, res) => {
   const product = req.body;
   const cart = [...(req.session.cart || [])];
   const idx = cart.findIndex((i) => String(i.id) === String(product.id));
+  
+  const currentQuantity = idx !== -1 ? (cart[idx].quantity || 1) : 0;
+  const requestedQuantity = currentQuantity + 1;
+  const availableStock = await getProductStock(product.id);
+
+  if (requestedQuantity > availableStock) {
+    return res.status(400).json({ error: "Not enough stock available" });
+  }
+
   if (idx !== -1) {
-    // clone the item so the array reference changes
-    cart[idx] = { ...cart[idx], quantity: (cart[idx].quantity || 1) + 1 };
+    cart[idx] = { ...cart[idx], quantity: requestedQuantity };
   } else {
     cart.push({ ...product, quantity: 1 });
   }
   saveCart(req, res, cart);
 });
 
-app.put("/cart/:id", (req, res) => {
+app.put("/cart/:id", async (req, res) => {
   const productId = String(req.params.id);
   const quantity = Number(req.body.quantity);
   let cart = [...(req.session.cart || [])];
@@ -212,18 +231,25 @@ app.put("/cart/:id", (req, res) => {
     return res.status(400).json({ error: "Quantity must be a number" });
   }
 
+  if (quantity > 0) {
+    const availableStock = await getProductStock(productId);
+    if (quantity > availableStock) {
+      return res.status(400).json({ error: "Not enough stock available" });
+    }
+  }
+
   if (quantity <= 0) {
     cart = cart.filter((i) => String(i.id) !== productId);
   } else {
     const idx = cart.findIndex((i) => String(i.id) === productId);
     if (idx !== -1) {
-      cart[idx] = { ...cart[idx], quantity }; // new object – triggers change detection
+      cart[idx] = { ...cart[idx], quantity };
     }
   }
   saveCart(req, res, cart);
 });
 
-app.post("/cart/:id/increment", (req, res) => {
+app.post("/cart/:id/increment", async (req, res) => {
   const productId = String(req.params.id);
   const cart = [...(req.session.cart || [])];
   const idx = cart.findIndex((i) => String(i.id) === productId);
@@ -232,7 +258,14 @@ app.post("/cart/:id/increment", (req, res) => {
     return res.status(404).json({ error: "Product not in cart" });
   }
 
-  cart[idx] = { ...cart[idx], quantity: (cart[idx].quantity || 1) + 1 };
+  const requestedQuantity = (cart[idx].quantity || 1) + 1;
+  const availableStock = await getProductStock(productId);
+
+  if (requestedQuantity > availableStock) {
+    return res.status(400).json({ error: "Not enough stock available" });
+  }
+
+  cart[idx] = { ...cart[idx], quantity: requestedQuantity };
   saveCart(req, res, cart);
 });
 
@@ -262,8 +295,29 @@ app.delete("/cart", (req, res) => {
   saveCart(req, res, []);
 });
 
+// Rate limiting middleware for orders using Redis
+async function orderRateLimiter(req, res, next) {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const key = `ratelimit:orders:${ip}`;
+  
+  try {
+    const current = await redisClient.incr(key);
+    if (current === 1) {
+      await redisClient.expire(key, 60); // 1 minute TTL
+    }
+    
+    if (current > 5) {
+      return res.status(429).json({ error: "Too many orders placed from this IP, please try again after a minute." });
+    }
+    next();
+  } catch (err) {
+    console.error("Rate limit error:", err);
+    next(); // Fallback to allow if Redis fails
+  }
+}
+
 // Orders endpoint
-app.post(["/orders", "/api/orders"], async (req, res) => {
+app.post(["/orders", "/api/orders"], orderRateLimiter, async (req, res) => {
   const cart = req.session.cart || [];
   if (cart.length === 0) {
     return res.status(400).json({ error: "Cart is empty" });
@@ -307,24 +361,7 @@ async function start() {
     await ensureRedisConnection();
     await ensureConnection();
 
-    // Seed products via UPSERT so new products always appear even on rebuilt DB
-    try {
-      await pool.query(`
-        INSERT INTO products (id, sku, name, price, category, image, description) VALUES
-          (1,  'MON-001', 'UltraWide Pro Display',    899.99,  'Monitors',    'https://images.unsplash.com/photo-1527443195645-1133f7f28990?w=500&q=80', '34-inch curved professional display'),
-          (2,  'CHAS-001','Open Frame Chassis',        249.99,  'Case',        'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=500&q=80', 'Premium open-air desktop chassis'),
-          (3,  'KEY-001', 'Mechanical Tech Keyboard', 149.99,  'Keyboards',   'https://images.unsplash.com/photo-1595225476474-87563907a212?w=500&q=80', 'RGB tactile switches, aluminium body'),
-          (4,  'MOU-001', 'Ergo Wireless Mouse',       79.99,  'Accessories', 'https://images.unsplash.com/photo-1615663245857-ac931003185c?w=500&q=80', 'Precision sensor and ergonomic grip'),
-          (5,  'GPU-001', 'RTX Pro Graphics Card',   1199.99,  'Components',  'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=500&q=80', 'Next-gen ray tracing performance'),
-          (6,  'HDP-001', 'Studio Headphones',        199.99,  'Audio',       'https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=500&q=80', 'High-fidelity sound for creators')
-        ON CONFLICT (id) DO UPDATE
-          SET sku=EXCLUDED.sku, name=EXCLUDED.name, price=EXCLUDED.price,
-              category=EXCLUDED.category, image=EXCLUDED.image, description=EXCLUDED.description;
-      `);
-      console.log("Products seeded.");
-    } catch (err) {
-      console.error("Seed error:", err.message);
-    }
+    // Products are now seeded via Flyway migrations (migrations/V3__add_inventory_and_orders.sql)
 
     const PORT = process.env.PORT || 8080;
     app.listen(PORT, () => {

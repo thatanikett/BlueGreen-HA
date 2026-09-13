@@ -10,6 +10,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: aws-cloud-env
     steps:
       - uses: actions/checkout@v3
 
@@ -29,11 +30,11 @@ jobs:
         run: npm run build
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Deploy to S3
         run: aws s3 sync ./frontend/dist/ s3://${{ secrets.S3_BUCKET_NAME }} --delete

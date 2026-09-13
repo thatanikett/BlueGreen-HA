@@ -54,3 +54,4 @@ crash.log
 *.tfvars
 .terraform.rc
 terraform.rc
+plan.txt
