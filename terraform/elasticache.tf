@@ -15,4 +15,5 @@ resource "aws_elasticache_replication_group" "redis" {
   engine_version             = "7.1"
   num_cache_clusters         = 2
   automatic_failover_enabled = true
+  multi_az_enabled           = true
 }
