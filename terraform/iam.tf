@@ -69,3 +69,29 @@ resource "aws_iam_role_policy_attachment" "codedeploy_managed" {
   role       = aws_iam_role.codedeploy.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
 }
+
+resource "aws_iam_role_policy_attachment" "codedeploy_autoscaling" {
+  role       = aws_iam_role.codedeploy.name
+  policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
+}
+
+resource "aws_iam_role_policy" "codedeploy_passrole" {
+  name = "${var.project_name}-codedeploy-passrole"
+  role = aws_iam_role.codedeploy.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole",
+          "ec2:CreateTags",
+          "ec2:RunInstances"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
