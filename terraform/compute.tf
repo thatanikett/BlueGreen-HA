@@ -42,7 +42,7 @@ resource "aws_launch_template" "backend" {
 
 resource "aws_autoscaling_group" "backend" {
   name                = "${var.project_name}-asg"
-  vpc_zone_identifier = [aws_subnet.private_app_1.id, aws_subnet.private_app_2.id]
+  vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
   min_size            = 1
   desired_capacity    = 2
   max_size            = 4
